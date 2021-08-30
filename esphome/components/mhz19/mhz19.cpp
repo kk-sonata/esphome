@@ -10,6 +10,7 @@ static const uint8_t MHZ19_RESPONSE_LENGTH = 9;
 static const uint8_t MHZ19_COMMAND_GET_PPM[] = {0xFF, 0x01, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00};
 static const uint8_t MHZ19_COMMAND_ABC_ENABLE[] = {0xFF, 0x01, 0x79, 0xA0, 0x00, 0x00, 0x00, 0x00};
 static const uint8_t MHZ19_COMMAND_ABC_DISABLE[] = {0xFF, 0x01, 0x79, 0x00, 0x00, 0x00, 0x00, 0x00};
+static const uint8_t MHZ19_COMMAND_ABC_GET_STATUS[] = {0xFF, 0x01, 0x7D, 0x00, 0x00, 0x00, 0x00, 0x00};
 static const uint8_t MHZ19_COMMAND_CALIBRATE_ZERO[] = {0xFF, 0x01, 0x87, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 uint8_t mhz19_checksum(const uint8_t *command) {
@@ -61,6 +62,8 @@ void MHZ19Component::update() {
     this->co2_sensor_->publish_state(ppm);
   if (this->temperature_sensor_ != nullptr)
     this->temperature_sensor_->publish_state(temp);
+
+  this->abc_get_status();
 }
 
 void MHZ19Component::calibrate_zero() {
@@ -76,6 +79,36 @@ void MHZ19Component::abc_enable() {
 void MHZ19Component::abc_disable() {
   ESP_LOGD(TAG, "MHZ19 Disabling automatic baseline calibration");
   this->mhz19_write_command_(MHZ19_COMMAND_ABC_DISABLE, nullptr);
+}
+
+void MHZ19Component::abc_get_status() {
+  uint8_t response[MHZ19_RESPONSE_LENGTH];
+  if (!this->mhz19_write_command_(MHZ19_COMMAND_ABC_GET_STATUS, response)) {
+    ESP_LOGW(TAG, "Reading data from MHZ19 failed!");
+    this->status_set_warning();
+    return;
+  }
+  ESP_LOGD(TAG, "MHZ19 getting ABC status");
+  this->mhz19_write_command_(MHZ19_COMMAND_ABC_GET_STATUS, nullptr);
+
+    if (response[0] != 0xFF || response[1] != 0x86) {
+    ESP_LOGW(TAG, "Invalid preamble from MHZ19!");
+    this->status_set_warning();
+    return;
+  }
+
+  uint8_t checksum = mhz19_checksum(response);
+  if (response[8] != checksum) {
+    ESP_LOGW(TAG, "MHZ19 Checksum doesn't match: 0x%02X!=0x%02X", response[8], checksum);
+    this->status_set_warning();
+    return;
+  }
+
+  this->status_clear_warning();
+  const uint8_t abcstatus = response[7];
+
+  ESP_LOGD(TAG, "MHZ19 ABC Status=0x%02X", abcstatus);
+  ESP_LOGD(TAG, "Raw Output: %02X %02X %02X %02X %02X %02X %02X", response[2], response[3], response[4], response[5], response[6], response[7], response[8] );  
 }
 
 bool MHZ19Component::mhz19_write_command_(const uint8_t *command, uint8_t *response) {
