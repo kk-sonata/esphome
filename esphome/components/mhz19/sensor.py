@@ -17,6 +17,8 @@ from esphome.const import (
 DEPENDENCIES = ["uart"]
 
 CONF_AUTOMATIC_BASELINE_CALIBRATION = "automatic_baseline_calibration"
+CONF_ABC_TIMER = "abc_timer"
+CONF_ABC_CYCLE_COUNT = "abc_cycle_count"
 
 mhz19_ns = cg.esphome_ns.namespace("mhz19")
 MHZ19Component = mhz19_ns.class_("MHZ19Component", cg.PollingComponent, uart.UARTDevice)
@@ -40,6 +42,18 @@ CONFIG_SCHEMA = (
                 unit_of_measurement=UNIT_CELSIUS,
                 accuracy_decimals=0,
                 device_class=DEVICE_CLASS_TEMPERATURE,
+                state_class=STATE_CLASS_MEASUREMENT,
+            ),
+            cv.Optional(CONF_ABC_TIMER): sensor.sensor_schema(
+                # unit_of_measurement=UNIT_CELSIUS,
+                accuracy_decimals=0,
+                # device_class=DEVICE_CLASS_TEMPERATURE,
+                state_class=STATE_CLASS_MEASUREMENT,
+            ),
+            cv.Optional(CONF_ABC_CYCLE_COUNT): sensor.sensor_schema(
+                # unit_of_measurement=UNIT_CELSIUS,
+                accuracy_decimals=0,
+                # device_class=DEVICE_CLASS_TEMPERATURE,
                 state_class=STATE_CLASS_MEASUREMENT,
             ),
             cv.Optional(CONF_AUTOMATIC_BASELINE_CALIBRATION): cv.boolean,
@@ -66,6 +80,13 @@ async def to_code(config):
     if CONF_AUTOMATIC_BASELINE_CALIBRATION in config:
         cg.add(var.set_abc_enabled(config[CONF_AUTOMATIC_BASELINE_CALIBRATION]))
 
+    if CONF_ABC_TIMER in config:
+        sens = await sensor.new_sensor(config[CONF_ABC_TIMER])
+        cg.add(var.set_abc_timer_sensor(sens))
+
+    if CONF_ABC_CYCLE_COUNT in config:
+        sens = await sensor.new_sensor(config[CONF_ABC_CYCLE_COUNT])
+        cg.add(var.set_abc_cycle_count_sensor(sens))
 
 CALIBRATION_ACTION_SCHEMA = maybe_simple_id(
     {

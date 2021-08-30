@@ -54,16 +54,22 @@ void MHZ19Component::update() {
   const uint16_t ppm = (uint16_t(response[2]) << 8) | response[3];
   const int temp = int(response[4]) - 40;
   const uint8_t status = response[5];
+  const uint8_t abc_timer = response[6];
+  const uint8_t abc_cycle_count = response[7];
 
-  ESP_LOGD(TAG, "MHZ19 Received CO₂=%uppm Temperature=%d°C Status=0x%02X", ppm, temp, status);
-  ESP_LOGD(TAG, "Raw Output: %02X %02X %02X %02X %02X %02X %02X", response[2], response[3], response[4], response[5], response[6], response[7], response[8] );
+  ESP_LOGD(TAG, "MHZ19 Received CO₂=%uppm Temperature=%d°C Status=0x%02X ABC Timer=%u ABC Cycle Count=%u", ppm, temp, status, abc_timer, abc_cycle_count);
+  // ESP_LOGD(TAG, "Raw Output: %02X %02X %02X %02X %02X %02X %02X", response[2], response[3], response[4], response[5], response[6], response[7], response[8] );
 
   if (this->co2_sensor_ != nullptr)
     this->co2_sensor_->publish_state(ppm);
   if (this->temperature_sensor_ != nullptr)
     this->temperature_sensor_->publish_state(temp);
+  if (this->abc_timer_sensor_ != nullptr)
+    this->temperature_sensor_->publish_state(abc_timer);
+  if (this->abc_cycle_count_sensor_ != nullptr)
+    this->temperature_sensor_->publish_state(abc_cycle_count);
 
-  this->abc_get_status();
+  // this->abc_get_status();
 }
 
 void MHZ19Component::calibrate_zero() {
@@ -108,7 +114,7 @@ void MHZ19Component::abc_get_status() {
   const uint8_t abcstatus = response[7];
 
   ESP_LOGD(TAG, "MHZ19 ABC Status=0x%02X", abcstatus);
-  ESP_LOGD(TAG, "Raw Output: %02X %02X %02X %02X %02X %02X %02X", response[2], response[3], response[4], response[5], response[6], response[7], response[8] );  
+  ESP_LOGD(TAG, "Raw Output: %02X %02X %02X %02X %02X %02X %02X", response[2], response[3], response[4], response[5], response[6], response[7] );  
 }
 
 bool MHZ19Component::mhz19_write_command_(const uint8_t *command, uint8_t *response) {
