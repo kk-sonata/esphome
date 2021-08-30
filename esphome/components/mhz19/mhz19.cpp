@@ -55,7 +55,7 @@ void MHZ19Component::update() {
   const uint8_t status = response[5];
 
   ESP_LOGD(TAG, "MHZ19 Received CO₂=%uppm Temperature=%d°C Status=0x%02X", ppm, temp, status);
-  ESP_LOGD(TAG, "Raw Output: %X %X %X %X %X %X %X", response[2], response[3], response[4], response[5], response[6]], response[7], response[8], );
+  ESP_LOGD(TAG, "Raw Output: %X %X %X %X %X %X %X", response[2], response[3], response[4], response[5], response[6], response[7], response[8], );
 
   if (this->co2_sensor_ != nullptr)
     this->co2_sensor_->publish_state(ppm);
