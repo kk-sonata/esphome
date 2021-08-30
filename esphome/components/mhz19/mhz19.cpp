@@ -91,7 +91,7 @@ void MHZ19Component::abc_get_status() {
   ESP_LOGD(TAG, "MHZ19 getting ABC status");
   this->mhz19_write_command_(MHZ19_COMMAND_ABC_GET_STATUS, nullptr);
 
-    if (response[0] != 0xFF || response[1] != 0x86) {
+    if (response[0] != 0xFF || response[1] != 0x7D) {
     ESP_LOGW(TAG, "Invalid preamble from MHZ19!");
     this->status_set_warning();
     return;
