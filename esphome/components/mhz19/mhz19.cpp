@@ -65,9 +65,9 @@ void MHZ19Component::update() {
   if (this->temperature_sensor_ != nullptr)
     this->temperature_sensor_->publish_state(temp);
   if (this->abc_timer_sensor_ != nullptr)
-    this->temperature_sensor_->publish_state(abc_timer);
+    this->abc_timer_sensor_->publish_state(abc_timer);
   if (this->abc_cycle_count_sensor_ != nullptr)
-    this->temperature_sensor_->publish_state(abc_cycle_count);
+    this->abc_cycle_count_sensor_->publish_state(abc_cycle_count);
 
   // this->abc_get_status();
 }
