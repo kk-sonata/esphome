@@ -40,7 +40,7 @@ def validate_type(value):
         raise cv.Invalid("Must have B in type")
     rest = set(value) - set("RGBW")
     if rest:
-        raise cv.Invalid("Type has invalid color: {}".format(", ".join(rest)))
+        raise cv.Invalid(f"Type has invalid color: {', '.join(rest)}")
     if len(set(value)) != len(value):
         raise cv.Invalid("Type has duplicate color!")
     return value
@@ -95,9 +95,7 @@ def validate_method_pin(value):
     for opt in (CONF_PIN, CONF_CLOCK_PIN, CONF_DATA_PIN):
         if opt in value and value[opt] not in pins_:
             raise cv.Invalid(
-                "Method {} only supports pin(s) {}".format(
-                    method, ", ".join(f"GPIO{x}" for x in pins_)
-                ),
+                f"Method {method} only supports pin(s) {', '.join(f'GPIO{x}' for x in pins_)}",
                 path=[CONF_METHOD],
             )
     return value
@@ -139,7 +137,7 @@ def format_method(config):
 
     if config[CONF_INVERT]:
         if method == "ESP8266_DMA":
-            variant = "Inverted" + variant
+            variant = f"Inverted{variant}"
         else:
             variant += "Inverted"
 
@@ -205,4 +203,4 @@ async def to_code(config):
     cg.add(var.set_pixel_order(getattr(ESPNeoPixelOrder, config[CONF_TYPE])))
 
     # https://github.com/Makuna/NeoPixelBus/blob/master/library.json
-    cg.add_library("NeoPixelBus-esphome", "2.6.2")
+    cg.add_library("makuna/NeoPixelBus", "2.6.7")
