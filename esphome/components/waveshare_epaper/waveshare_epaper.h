@@ -61,7 +61,7 @@ class WaveshareEPaper : public PollingComponent,
   GPIOPin *reset_pin_{nullptr};
   GPIOPin *dc_pin_;
   GPIOPin *busy_pin_{nullptr};
-  virtual int idle_timeout_() { return 1000; }  // NOLINT(readability-identifier-naming)
+  virtual uint32_t idle_timeout_() { return 1000u; }  // NOLINT(readability-identifier-naming)
 };
 
 enum WaveshareEPaperTypeAModel {
@@ -110,7 +110,7 @@ class WaveshareEPaperTypeA : public WaveshareEPaper {
   uint32_t full_update_every_{30};
   uint32_t at_update_{0};
   WaveshareEPaperTypeAModel model_;
-  int idle_timeout_() override;
+  uint32_t idle_timeout_() override;
 };
 
 enum WaveshareEPaperTypeBModel {
@@ -278,6 +278,29 @@ class WaveshareEPaper7P5In : public WaveshareEPaper {
   int get_height_internal() override;
 };
 
+class WaveshareEPaper7P5InBC : public WaveshareEPaper {
+ public:
+  void initialize() override;
+
+  void display() override;
+
+  void dump_config() override;
+
+  void deep_sleep() override {
+    // COMMAND POWER OFF
+    this->command(0x02);
+    this->wait_until_idle_();
+    // COMMAND DEEP SLEEP
+    this->command(0x07);
+    this->data(0xA5);  // check byte
+  }
+
+ protected:
+  int get_width_internal() override;
+
+  int get_height_internal() override;
+};
+
 class WaveshareEPaper7P5InV2 : public WaveshareEPaper {
  public:
   void initialize() override;
@@ -323,7 +346,7 @@ class WaveshareEPaper2P13InDKE : public WaveshareEPaper {
 
   int get_height_internal() override;
 
-  int idle_timeout_() override;
+  uint32_t idle_timeout_() override;
 
   uint32_t full_update_every_{30};
   uint32_t at_update_{0};

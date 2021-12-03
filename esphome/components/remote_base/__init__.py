@@ -439,6 +439,49 @@ async def pioneer_action(var, config, args):
     cg.add(var.set_rc_code_2(template_))
 
 
+# Pronto
+(
+    ProntoData,
+    ProntoBinarySensor,
+    ProntoTrigger,
+    ProntoAction,
+    ProntoDumper,
+) = declare_protocol("Pronto")
+PRONTO_SCHEMA = cv.Schema(
+    {
+        cv.Required(CONF_DATA): cv.string,
+    }
+)
+
+
+@register_binary_sensor("pronto", ProntoBinarySensor, PRONTO_SCHEMA)
+def pronto_binary_sensor(var, config):
+    cg.add(
+        var.set_data(
+            cg.StructInitializer(
+                ProntoData,
+                ("data", config[CONF_DATA]),
+            )
+        )
+    )
+
+
+@register_trigger("pronto", ProntoTrigger, ProntoData)
+def pronto_trigger(var, config):
+    pass
+
+
+@register_dumper("pronto", ProntoDumper)
+def pronto_dumper(var, config):
+    pass
+
+
+@register_action("pronto", ProntoAction, PRONTO_SCHEMA)
+async def pronto_action(var, config, args):
+    template_ = await cg.templatable(config[CONF_DATA], args, cg.std_string)
+    cg.add(var.set_data(template_))
+
+
 # Sony
 SonyData, SonyBinarySensor, SonyTrigger, SonyAction, SonyDumper = declare_protocol(
     "Sony"
@@ -1092,15 +1135,13 @@ MIDEA_SCHEMA = cv.Schema(
             [cv.Any(cv.hex_uint8_t, cv.uint8_t)],
             cv.Length(min=5, max=5),
         ),
-        cv.GenerateID(CONF_CODE_STORAGE_ID): cv.declare_id(cg.uint8),
     }
 )
 
 
 @register_binary_sensor("midea", MideaBinarySensor, MIDEA_SCHEMA)
 def midea_binary_sensor(var, config):
-    arr_ = cg.progmem_array(config[CONF_CODE_STORAGE_ID], config[CONF_CODE])
-    cg.add(var.set_code(arr_))
+    cg.add(var.set_code(config[CONF_CODE]))
 
 
 @register_trigger("midea", MideaTrigger, MideaData)
@@ -1119,5 +1160,4 @@ def midea_dumper(var, config):
     MIDEA_SCHEMA,
 )
 async def midea_action(var, config, args):
-    arr_ = cg.progmem_array(config[CONF_CODE_STORAGE_ID], config[CONF_CODE])
-    cg.add(var.set_code(arr_))
+    cg.add(var.set_code(config[CONF_CODE]))

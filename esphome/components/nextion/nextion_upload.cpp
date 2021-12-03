@@ -1,15 +1,16 @@
-
 #include "nextion.h"
+
+#ifdef USE_NEXTION_TFT_UPLOAD
+
 #include "esphome/core/application.h"
 #include "esphome/core/macros.h"
 #include "esphome/core/util.h"
 #include "esphome/core/log.h"
+#include "esphome/components/network/util.h"
 
 namespace esphome {
 namespace nextion {
 static const char *const TAG = "nextion_upload";
-
-#if defined(USE_TFT_UPLOAD) && (defined(USE_ETHERNET) || defined(USE_WIFI))
 
 // Followed guide
 // https://unofficialnextion.com/t/nextion-upload-protocol-v1-2-the-fast-one/1044/2
@@ -26,7 +27,7 @@ int Nextion::upload_by_chunks_(HTTPClient *http, int range_start) {
   if (range_end > this->tft_size_)
     range_end = this->tft_size_;
 
-#ifdef ARDUINO_ARCH_ESP8266
+#ifdef USE_ESP8266
 #if ARDUINO_VERSION_CODE >= VERSION_CODE(2, 7, 0)
   http->setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 #elif ARDUINO_VERSION_CODE >= VERSION_CODE(2, 6, 0)
@@ -46,10 +47,10 @@ int Nextion::upload_by_chunks_(HTTPClient *http, int range_start) {
   int code = 0;
   bool begin_status = false;
   while (tries <= 5) {
-#ifdef ARDUINO_ARCH_ESP32
+#ifdef USE_ESP32
     begin_status = http->begin(this->tft_url_.c_str());
 #endif
-#ifdef ARDUINO_ARCH_ESP8266
+#ifdef USE_ESP8266
     begin_status = http->begin(*this->get_wifi_client_(), this->tft_url_.c_str());
 #endif
 
@@ -94,7 +95,7 @@ int Nextion::upload_by_chunks_(HTTPClient *http, int range_start) {
   }
   http->end();
   ESP_LOGN(TAG, "this->content_length_ %d sent %d", this->content_length_, sent);
-  for (uint32_t i = 0; i < range; i += 4096) {
+  for (int i = 0; i < range; i += 4096) {
     this->write_array(&this->transfer_buffer_[i], 4096);
     this->content_length_ -= 4096;
     ESP_LOGN(TAG, "this->content_length_ %d range %d range_end %d range_start %d", this->content_length_, range,
@@ -129,7 +130,7 @@ void Nextion::upload_tft() {
     return;
   }
 
-  if (!network_is_connected()) {
+  if (!network::is_connected()) {
     ESP_LOGD(TAG, "network is not connected");
     return;
   }
@@ -139,10 +140,10 @@ void Nextion::upload_tft() {
   HTTPClient http;
   http.setTimeout(15000);  // Yes 15 seconds.... Helps 8266s along
   bool begin_status = false;
-#ifdef ARDUINO_ARCH_ESP32
+#ifdef USE_ESP32
   begin_status = http.begin(this->tft_url_.c_str());
 #endif
-#ifdef ARDUINO_ARCH_ESP8266
+#ifdef USE_ESP8266
 #if ARDUINO_VERSION_CODE >= VERSION_CODE(2, 7, 0)
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 #elif ARDUINO_VERSION_CODE >= VERSION_CODE(2, 6, 0)
@@ -157,7 +158,7 @@ void Nextion::upload_tft() {
   if (!begin_status) {
     this->is_updating_ = false;
     ESP_LOGD(TAG, "connection failed");
-#ifdef ARDUINO_ARCH_ESP32
+#ifdef USE_ESP32
     if (psramFound())
       free(this->transfer_buffer_);  // NOLINT
     else
@@ -237,7 +238,7 @@ void Nextion::upload_tft() {
   // The Nextion display will, if it's ready to accept data, send a 0x05 byte.
   ESP_LOGD(TAG, "Upgrade response is %s %zu", response.c_str(), response.length());
 
-  for (int i = 0; i < response.length(); i++) {
+  for (size_t i = 0; i < response.length(); i++) {
     ESP_LOGD(TAG, "Available %d : 0x%02X", i, response[i]);
   }
 
@@ -249,7 +250,7 @@ void Nextion::upload_tft() {
   }
 
   // Nextion wants 4096 bytes at a time. Make chunk_size a multiple of 4096
-#ifdef ARDUINO_ARCH_ESP32
+#ifdef USE_ESP32
   uint32_t chunk_size = 8192;
   if (psramFound()) {
     chunk_size = this->content_length_;
@@ -268,7 +269,7 @@ void Nextion::upload_tft() {
 #endif
 
   if (this->transfer_buffer_ == nullptr) {
-#ifdef ARDUINO_ARCH_ESP32
+#ifdef USE_ESP32
     if (psramFound()) {
       ESP_LOGD(TAG, "Allocating PSRAM buffer size %d, Free PSRAM size is %u", chunk_size, ESP.getFreePsram());
       this->transfer_buffer_ = (uint8_t *) ps_malloc(chunk_size);
@@ -280,16 +281,18 @@ void Nextion::upload_tft() {
 #endif
       // NOLINTNEXTLINE(readability-static-accessed-through-instance)
       ESP_LOGD(TAG, "Allocating buffer size %d, Heap size is %u", chunk_size, ESP.getFreeHeap());
-      this->transfer_buffer_ = new (std::nothrow) uint8_t[chunk_size];  // NOLINT(cppcoreguidelines-owning-memory)
-      if (this->transfer_buffer_ == nullptr) {                          // Try a smaller size
+      // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+      this->transfer_buffer_ = new (std::nothrow) uint8_t[chunk_size];
+      if (this->transfer_buffer_ == nullptr) {  // Try a smaller size
         ESP_LOGD(TAG, "Could not allocate buffer size: %d trying 4096 instead", chunk_size);
         chunk_size = 4096;
         ESP_LOGD(TAG, "Allocating %d buffer", chunk_size);
-        this->transfer_buffer_ = new (std::nothrow) uint8_t[chunk_size];  // NOLINT(cppcoreguidelines-owning-memory)
+        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+        this->transfer_buffer_ = new uint8_t[chunk_size];
 
         if (!this->transfer_buffer_)
           this->upload_end_();
-#ifdef ARDUINO_ARCH_ESP32
+#ifdef USE_ESP32
       }
 #endif
     }
@@ -325,11 +328,12 @@ void Nextion::upload_end_() {
   ESP.restart();  // NOLINT(readability-static-accessed-through-instance)
 }
 
-#ifdef ARDUINO_ARCH_ESP8266
+#ifdef USE_ESP8266
 WiFiClient *Nextion::get_wifi_client_() {
   if (this->tft_url_.compare(0, 6, "https:") == 0) {
     if (this->wifi_client_secure_ == nullptr) {
-      this->wifi_client_secure_ = new BearSSL::WiFiClientSecure();  // NOLINT(cppcoreguidelines-owning-memory)
+      // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+      this->wifi_client_secure_ = new BearSSL::WiFiClientSecure();
       this->wifi_client_secure_->setInsecure();
       this->wifi_client_secure_->setBufferSizes(512, 512);
     }
@@ -337,14 +341,13 @@ WiFiClient *Nextion::get_wifi_client_() {
   }
 
   if (this->wifi_client_ == nullptr) {
-    this->wifi_client_ = new WiFiClient();  // NOLINT(cppcoreguidelines-owning-memory)
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    this->wifi_client_ = new WiFiClient();
   }
   return this->wifi_client_;
 }
 #endif
-
-#else
-void Nextion::upload_tft() { ESP_LOGW(TAG, "tft_url, WIFI or Ethernet components are needed. Cannot upload."); }
-#endif
 }  // namespace nextion
 }  // namespace esphome
+
+#endif  // USE_NEXTION_TFT_UPLOAD

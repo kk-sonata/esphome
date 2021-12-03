@@ -2,7 +2,7 @@
 #include "esphome/components/display/display_buffer.h"
 #include "esphome/core/color.h"
 #include "esphome/core/log.h"
-#include "esphome/core/esphal.h"
+#include "esphome/core/hal.h"
 #include <algorithm>
 #include <sstream>
 #include <iostream>  // std::cout, std::fixed
@@ -34,12 +34,12 @@ void HistoryData::take_sample(float data) {
     this->count_ = (this->count_ + 1) % this->length_;
     ESP_LOGV(TAG, "Updating trace with value: %f", data);
   }
-  if (!isnan(data)) {
+  if (!std::isnan(data)) {
     // Recalc recent max/min
     this->recent_min_ = data;
     this->recent_max_ = data;
     for (int i = 0; i < this->length_; i++) {
-      if (!isnan(this->samples_[i])) {
+      if (!std::isnan(this->samples_[i])) {
         if (this->recent_max_ < this->samples_[i])
           this->recent_max_ = this->samples_[i];
         if (this->recent_min_ > this->samples_[i])
@@ -70,15 +70,15 @@ void Graph::draw(DisplayBuffer *buff, uint16_t x_offset, uint16_t y_offset, Colo
   for (auto *trace : traces_) {
     float mx = trace->get_tracedata()->get_recent_max();
     float mn = trace->get_tracedata()->get_recent_min();
-    if (isnan(ymax) || (ymax < mx))
+    if (std::isnan(ymax) || (ymax < mx))
       ymax = mx;
-    if (isnan(ymin) || (ymin > mn))
+    if (std::isnan(ymin) || (ymin > mn))
       ymin = mn;
   }
   // Adjust if manually overridden
-  if (!isnan(this->min_value_))
+  if (!std::isnan(this->min_value_))
     ymin = this->min_value_;
-  if (!isnan(this->max_value_))
+  if (!std::isnan(this->max_value_))
     ymax = this->max_value_;
 
   float yrange = ymax - ymin;
@@ -86,23 +86,23 @@ void Graph::draw(DisplayBuffer *buff, uint16_t x_offset, uint16_t y_offset, Colo
     // Look back in trace data to best-fit into local range
     float mx = NAN;
     float mn = NAN;
-    for (int16_t i = 0; i < this->width_; i++) {
+    for (uint32_t i = 0; i < this->width_; i++) {
       for (auto *trace : traces_) {
         float v = trace->get_tracedata()->get_value(i);
-        if (!isnan(v)) {
+        if (!std::isnan(v)) {
           if ((v - mn) > this->max_range_)
             break;
           if ((mx - v) > this->max_range_)
             break;
-          if (isnan(mx) || (v > mx))
+          if (std::isnan(mx) || (v > mx))
             mx = v;
-          if (isnan(mn) || (v < mn))
+          if (std::isnan(mn) || (v < mn))
             mn = v;
         }
       }
     }
     yrange = this->max_range_;
-    if (!isnan(mn)) {
+    if (!std::isnan(mn)) {
       ymin = mn;
       ymax = ymin + this->max_range_;
     }
@@ -110,7 +110,7 @@ void Graph::draw(DisplayBuffer *buff, uint16_t x_offset, uint16_t y_offset, Colo
   }
 
   float y_per_div = this->min_range_;
-  if (!isnan(this->gridspacing_y_)) {
+  if (!std::isnan(this->gridspacing_y_)) {
     y_per_div = this->gridspacing_y_;
   }
   // Restrict drawing too many gridlines
@@ -129,15 +129,15 @@ void Graph::draw(DisplayBuffer *buff, uint16_t x_offset, uint16_t y_offset, Colo
   yrange = ymax - ymin;
 
   /// Draw grid
-  if (!isnan(this->gridspacing_y_)) {
+  if (!std::isnan(this->gridspacing_y_)) {
     for (int y = yn; y <= ym; y++) {
       int16_t py = (int16_t) roundf((this->height_ - 1) * (1.0 - (float) (y - yn) / (ym - yn)));
-      for (int x = 0; x < this->width_; x += 2) {
+      for (uint32_t x = 0; x < this->width_; x += 2) {
         buff->draw_pixel_at(x_offset + x, y_offset + py, color);
       }
     }
   }
-  if (!isnan(this->gridspacing_x_) && (this->gridspacing_x_ > 0)) {
+  if (!std::isnan(this->gridspacing_x_) && (this->gridspacing_x_ > 0)) {
     int n = this->duration_ / this->gridspacing_x_;
     // Restrict drawing too many gridlines
     if (n > 20) {
@@ -147,7 +147,7 @@ void Graph::draw(DisplayBuffer *buff, uint16_t x_offset, uint16_t y_offset, Colo
       ESP_LOGW(TAG, "Graphing reducing x-scale to prevent too many gridlines");
     }
     for (int i = 0; i <= n; i++) {
-      for (int y = 0; y < this->height_; y += 2) {
+      for (uint32_t y = 0; y < this->height_; y += 2) {
         buff->draw_pixel_at(x_offset + i * (this->width_ - 1) / n, y_offset + y, color);
       }
     }
@@ -158,14 +158,14 @@ void Graph::draw(DisplayBuffer *buff, uint16_t x_offset, uint16_t y_offset, Colo
   for (auto *trace : traces_) {
     Color c = trace->get_line_color();
     uint16_t thick = trace->get_line_thickness();
-    for (int16_t i = 0; i < this->width_; i++) {
+    for (uint32_t i = 0; i < this->width_; i++) {
       float v = (trace->get_tracedata()->get_value(i) - ymin) / yrange;
-      if (!isnan(v) && (thick > 0)) {
+      if (!std::isnan(v) && (thick > 0)) {
         int16_t x = this->width_ - 1 - i;
         uint8_t b = (i % (thick * LineType::PATTERN_LENGTH)) / thick;
         if (((uint8_t) trace->get_line_type() & (1 << b)) == (1 << b)) {
           int16_t y = (int16_t) roundf((this->height_ - 1) * (1.0 - v)) - thick / 2;
-          for (int16_t t = 0; t < thick; t++) {
+          for (uint16_t t = 0; t < thick; t++) {
             buff->draw_pixel_at(x_offset + x, y_offset + y + t, c);
           }
         }
@@ -179,13 +179,13 @@ void GraphLegend::init(Graph *g) {
   parent_ = g;
 
   // Determine maximum expected text and value width / height
-  int txtw = 0, txtos = 0, txtbl = 0, txth = 0;
-  int valw = 0, valos = 0, valbl = 0, valh = 0;
+  int txtw = 0, txth = 0;
+  int valw = 0, valh = 0;
   int lt = 0;
   for (auto *trace : g->traces_) {
     std::string txtstr = trace->get_name();
     int fw, fos, fbl, fh;
-    this->font_label->measure(txtstr.c_str(), &fw, &fos, &fbl, &fh);
+    this->font_label_->measure(txtstr.c_str(), &fw, &fos, &fbl, &fh);
     if (fw > txtw)
       txtw = fw;
     if (fh > txth)
@@ -201,7 +201,7 @@ void GraphLegend::init(Graph *g) {
       if (this->units_) {
         valstr += trace->sensor_->get_unit_of_measurement();
       }
-      this->font_value->measure(valstr.c_str(), &fw, &fos, &fbl, &fh);
+      this->font_value_->measure(valstr.c_str(), &fw, &fos, &fbl, &fh);
       if (fw > valw)
         valw = fw;
       if (fh > valh)
@@ -218,11 +218,11 @@ void GraphLegend::init(Graph *g) {
   uint16_t h = this->height_;
   DirectionType dir = this->direction_;
   ValuePositionType valpos = this->values_;
-  if (!this->font_value) {
+  if (!this->font_value_) {
     valpos = VALUE_POSITION_TYPE_NONE;
   }
   // Line sample always goes below text for compactness
-  this->yl = txth + (txth / 4) + lt / 2;
+  this->yl_ = txth + (txth / 4) + lt / 2;
 
   if (dir == DIRECTION_TYPE_AUTO) {
     dir = DIRECTION_TYPE_HORIZONTAL;  // as default
@@ -237,62 +237,62 @@ void GraphLegend::init(Graph *g) {
   }
 
   if (valpos == VALUE_POSITION_TYPE_BELOW) {
-    this->yv = txth + (txth / 4);
+    this->yv_ = txth + (txth / 4);
     if (this->lines_)
-      this->yv += txth / 4 + lt;
+      this->yv_ += txth / 4 + lt;
   } else if (valpos == VALUE_POSITION_TYPE_BESIDE) {
-    this->xv = (txtw + valw) / 2;
+    this->xv_ = (txtw + valw) / 2;
   }
 
   // If width or height is specified we divide evenly within, else we do tight-fit
   if (w == 0) {
-    this->x0 = txtw / 2;
-    this->xs = txtw;
+    this->x0_ = txtw / 2;
+    this->xs_ = txtw;
     if (valpos == VALUE_POSITION_TYPE_BELOW) {
-      this->xs = std::max(txtw, valw);
+      this->xs_ = std::max(txtw, valw);
       ;
-      this->x0 = this->xs / 2;
+      this->x0_ = this->xs_ / 2;
     } else if (valpos == VALUE_POSITION_TYPE_BESIDE) {
-      this->xs = txtw + valw;
+      this->xs_ = txtw + valw;
     }
     if (dir == DIRECTION_TYPE_VERTICAL) {
-      this->width_ = this->xs;
+      this->width_ = this->xs_;
     } else {
-      this->width_ = this->xs * n;
+      this->width_ = this->xs_ * n;
     }
   } else {
-    this->xs = w / n;
-    this->x0 = this->xs / 2;
+    this->xs_ = w / n;
+    this->x0_ = this->xs_ / 2;
   }
 
   if (h == 0) {
-    this->ys = txth;
+    this->ys_ = txth;
     if (valpos == VALUE_POSITION_TYPE_BELOW) {
-      this->ys = txth + txth / 2 + valh;
+      this->ys_ = txth + txth / 2 + valh;
       if (this->lines_) {
-        this->ys += lt;
+        this->ys_ += lt;
       }
     } else if (valpos == VALUE_POSITION_TYPE_BESIDE) {
       if (this->lines_) {
-        this->ys = std::max(txth + txth / 4 + lt + txth / 4, valh + valh / 4);
+        this->ys_ = std::max(txth + txth / 4 + lt + txth / 4, valh + valh / 4);
       } else {
-        this->ys = std::max(txth + txth / 4, valh + valh / 4);
+        this->ys_ = std::max(txth + txth / 4, valh + valh / 4);
       }
-      this->height_ = this->ys * n;
+      this->height_ = this->ys_ * n;
     }
     if (dir == DIRECTION_TYPE_HORIZONTAL) {
-      this->height_ = this->ys;
+      this->height_ = this->ys_;
     } else {
-      this->height_ = this->ys * n;
+      this->height_ = this->ys_ * n;
     }
   } else {
-    this->ys = h / n;
+    this->ys_ = h / n;
   }
 
   if (dir == DIRECTION_TYPE_HORIZONTAL) {
-    this->ys = 0;
+    this->ys_ = 0;
   } else {
-    this->xs = 0;
+    this->xs_ = 0;
   }
 }
 
@@ -310,38 +310,39 @@ void Graph::draw_legend(display::DisplayBuffer *buff, uint16_t x_offset, uint16_
     buff->vertical_line(x_offset + w - 1, y_offset, h, color);
   }
 
-  int x = x_offset + legend_->x0;
+  int x = x_offset + legend_->x0_;
   int y = y_offset;
   for (auto *trace : traces_) {
     std::string txtstr = trace->get_name();
     ESP_LOGV(TAG, "  %s", txtstr.c_str());
 
-    buff->printf(x, y, legend_->font_label, trace->get_line_color(), TextAlign::TOP_CENTER, "%s", txtstr.c_str());
+    buff->printf(x, y, legend_->font_label_, trace->get_line_color(), TextAlign::TOP_CENTER, "%s", txtstr.c_str());
 
     if (legend_->lines_) {
       uint16_t thick = trace->get_line_thickness();
-      for (int16_t i = 0; i < legend_->x0 * 4 / 3; i++) {
+      for (int i = 0; i < legend_->x0_ * 4 / 3; i++) {
         uint8_t b = (i % (thick * LineType::PATTERN_LENGTH)) / thick;
         if (((uint8_t) trace->get_line_type() & (1 << b)) == (1 << b)) {
-          buff->vertical_line(x - legend_->x0 * 2 / 3 + i, y + legend_->yl - thick / 2, thick, trace->get_line_color());
+          buff->vertical_line(x - legend_->x0_ * 2 / 3 + i, y + legend_->yl_ - thick / 2, thick,
+                              trace->get_line_color());
         }
       }
     }
 
     if (legend_->values_ != VALUE_POSITION_TYPE_NONE) {
-      int xv = x + legend_->xv;
-      int yv = y + legend_->yv;
+      int xv = x + legend_->xv_;
+      int yv = y + legend_->yv_;
       std::stringstream ss;
       ss << std::fixed << std::setprecision(trace->sensor_->get_accuracy_decimals()) << trace->sensor_->get_state();
       std::string valstr = ss.str();
       if (legend_->units_) {
         valstr += trace->sensor_->get_unit_of_measurement();
       }
-      buff->printf(xv, yv, legend_->font_value, trace->get_line_color(), TextAlign::TOP_CENTER, "%s", valstr.c_str());
+      buff->printf(xv, yv, legend_->font_value_, trace->get_line_color(), TextAlign::TOP_CENTER, "%s", valstr.c_str());
       ESP_LOGV(TAG, "    value: %s", valstr.c_str());
     }
-    x += legend_->xs;
-    y += legend_->ys;
+    x += legend_->xs_;
+    y += legend_->ys_;
   }
 }
 

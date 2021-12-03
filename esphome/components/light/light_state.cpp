@@ -8,7 +8,8 @@ namespace light {
 
 static const char *const TAG = "light";
 
-LightState::LightState(const std::string &name, LightOutput *output) : Nameable(name), output_(output) {}
+LightState::LightState(const std::string &name, LightOutput *output) : EntityBase(name), output_(output) {}
+LightState::LightState(LightOutput *output) : output_(output) {}
 
 LightTraits LightState::get_traits() { return this->output_->get_traits(); }
 LightCall LightState::turn_on() { return this->make_call().set_state(true); }
@@ -53,7 +54,7 @@ void LightState::setup() {
     case LIGHT_RESTORE_DEFAULT_ON:
     case LIGHT_RESTORE_INVERTED_DEFAULT_OFF:
     case LIGHT_RESTORE_INVERTED_DEFAULT_ON:
-      this->rtc_ = global_preferences.make_preference<LightStateRTCState>(this->get_object_id_hash());
+      this->rtc_ = global_preferences->make_preference<LightStateRTCState>(this->get_object_id_hash());
       // Attempt to load from preferences, else fall back to default values
       if (!this->rtc_.load(&recovered)) {
         recovered.state = false;

@@ -1,5 +1,6 @@
 """Helpers for config validation using voluptuous."""
 
+from dataclasses import dataclass
 import logging
 import os
 import re
@@ -11,12 +12,15 @@ from string import ascii_letters, digits
 import voluptuous as vol
 
 from esphome import core
+import esphome.codegen as cg
 from esphome.const import (
     ALLOWED_NAME_CHARS,
     CONF_AVAILABILITY,
     CONF_COMMAND_TOPIC,
     CONF_DISABLED_BY_DEFAULT,
     CONF_DISCOVERY,
+    CONF_ENTITY_CATEGORY,
+    CONF_ICON,
     CONF_ID,
     CONF_INTERNAL,
     CONF_NAME,
@@ -33,6 +37,12 @@ from esphome.const import (
     CONF_UPDATE_INTERVAL,
     CONF_TYPE_ID,
     CONF_TYPE,
+    ENTITY_CATEGORY_CONFIG,
+    ENTITY_CATEGORY_DIAGNOSTIC,
+    ENTITY_CATEGORY_NONE,
+    KEY_CORE,
+    KEY_FRAMEWORK_VERSION,
+    KEY_TARGET_FRAMEWORK,
 )
 from esphome.core import (
     CORE,
@@ -286,9 +296,11 @@ def icon(value):
     value = string_strict(value)
     if not value:
         return value
-    if value.startswith("mdi:"):
+    if re.match("^[\\w\\-]+:[\\w\\-]+$", value):
         return value
-    raise Invalid('Icons should start with prefix "mdi:"')
+    raise Invalid(
+        'Icons must match the format "[icon pack]:[icon]", e.g. "mdi:home-assistant"'
+    )
 
 
 def boolean(value):
@@ -492,20 +504,37 @@ def templatable(other_validators):
 
 
 def only_on(platforms):
-    """Validate that this option can only be specified on the given ESP platforms."""
+    """Validate that this option can only be specified on the given target platforms."""
     if not isinstance(platforms, list):
         platforms = [platforms]
 
     def validator_(obj):
-        if CORE.esp_platform not in platforms:
+        if CORE.target_platform not in platforms:
             raise Invalid(f"This feature is only available on {platforms}")
         return obj
 
     return validator_
 
 
-only_on_esp32 = only_on("ESP32")
-only_on_esp8266 = only_on("ESP8266")
+def only_with_framework(frameworks):
+    """Validate that this option can only be specified on the given frameworks."""
+    if not isinstance(frameworks, list):
+        frameworks = [frameworks]
+
+    def validator_(obj):
+        if CORE.target_framework not in frameworks:
+            raise Invalid(
+                f"This feature is only available with frameworks {frameworks}"
+            )
+        return obj
+
+    return validator_
+
+
+only_on_esp32 = only_on("esp32")
+only_on_esp8266 = only_on("esp8266")
+only_with_arduino = only_with_framework("arduino")
+only_with_esp_idf = only_with_framework("esp-idf")
 
 
 # Adapted from:
@@ -881,21 +910,9 @@ def validate_bytes(value):
 
 def hostname(value):
     value = string(value)
-    warned_underscore = False
-    if len(value) > 63:
-        raise Invalid("Hostnames can only be 63 characters long")
-    for c in value:
-        if not (c.isalnum() or c in "-_"):
-            raise Invalid("Hostname can only have alphanumeric characters and -")
-        if c in "_" and not warned_underscore:
-            _LOGGER.warning(
-                "'%s': Using the '_' (underscore) character in the hostname is discouraged "
-                "as it can cause problems with some DHCP and local name services. "
-                "For more information, see https://esphome.io/guides/faq.html#why-shouldn-t-i-use-underscores-in-my-device-name",
-                value,
-            )
-            warned_underscore = True
-    return value
+    if re.match(r"^[a-z0-9-]{1,63}$", value, re.IGNORECASE) is not None:
+        return value
+    raise Invalid(f"Invalid hostname: {value}")
 
 
 def domain(value):
@@ -1025,7 +1042,7 @@ def requires_component(comp):
     # pylint: disable=unsupported-membership-test
     def validator(value):
         # pylint: disable=unsupported-membership-test
-        if comp not in CORE.raw_config:
+        if comp not in CORE.loaded_integrations:
             raise Invalid(f"This option requires component {comp}")
         return value
 
@@ -1384,7 +1401,7 @@ def typed_schema(schemas, **kwargs):
         if schema_option is None:
             raise Invalid(f"{key} not specified!")
         key_v = key_validator(schema_option)
-        value = schemas[key_v](value)
+        value = Schema(schemas[key_v])(value)
         value[key] = key_v
         return value
 
@@ -1401,18 +1418,32 @@ class GenerateID(Optional):
 class SplitDefault(Optional):
     """Mark this key to have a split default for ESP8266/ESP32."""
 
-    def __init__(self, key, esp8266=vol.UNDEFINED, esp32=vol.UNDEFINED):
+    def __init__(
+        self,
+        key,
+        esp8266=vol.UNDEFINED,
+        esp32=vol.UNDEFINED,
+        esp32_arduino=vol.UNDEFINED,
+        esp32_idf=vol.UNDEFINED,
+    ):
         super().__init__(key)
         self._esp8266_default = vol.default_factory(esp8266)
-        self._esp32_default = vol.default_factory(esp32)
+        self._esp32_arduino_default = vol.default_factory(
+            esp32_arduino if esp32 is vol.UNDEFINED else esp32
+        )
+        self._esp32_idf_default = vol.default_factory(
+            esp32_idf if esp32 is vol.UNDEFINED else esp32
+        )
 
     @property
     def default(self):
         if CORE.is_esp8266:
             return self._esp8266_default
-        if CORE.is_esp32:
-            return self._esp32_default
-        raise ValueError
+        if CORE.is_esp32 and CORE.using_arduino:
+            return self._esp32_arduino_default
+        if CORE.is_esp32 and CORE.using_esp_idf:
+            return self._esp32_idf_default
+        raise NotImplementedError
 
     @default.setter
     def default(self, value):
@@ -1431,7 +1462,7 @@ class OnlyWith(Optional):
     @property
     def default(self):
         # pylint: disable=unsupported-membership-test
-        if self._component in CORE.raw_config:
+        if self._component in CORE.loaded_integrations:
             return self._default
         return vol.UNDEFINED
 
@@ -1441,7 +1472,7 @@ class OnlyWith(Optional):
         pass
 
 
-def _nameable_validator(config):
+def _entity_base_validator(config):
     if CONF_NAME not in config and CONF_ID not in config:
         raise Invalid("At least one of 'id:' or 'name:' is required!")
     if CONF_NAME not in config:
@@ -1527,6 +1558,17 @@ def maybe_simple_value(*validators, **kwargs):
     return validate
 
 
+_ENTITY_CATEGORIES = {
+    ENTITY_CATEGORY_NONE: cg.EntityCategory.ENTITY_CATEGORY_NONE,
+    ENTITY_CATEGORY_CONFIG: cg.EntityCategory.ENTITY_CATEGORY_CONFIG,
+    ENTITY_CATEGORY_DIAGNOSTIC: cg.EntityCategory.ENTITY_CATEGORY_DIAGNOSTIC,
+}
+
+
+def entity_category(value):
+    return enum(_ENTITY_CATEGORIES, lower=True)(value)
+
+
 MQTT_COMPONENT_AVAILABILITY_SCHEMA = Schema(
     {
         Required(CONF_TOPIC): subscribe_topic,
@@ -1552,15 +1594,17 @@ MQTT_COMMAND_COMPONENT_SCHEMA = MQTT_COMPONENT_SCHEMA.extend(
     }
 )
 
-NAMEABLE_SCHEMA = Schema(
+ENTITY_BASE_SCHEMA = Schema(
     {
         Optional(CONF_NAME): string,
         Optional(CONF_INTERNAL): boolean,
         Optional(CONF_DISABLED_BY_DEFAULT, default=False): boolean,
+        Optional(CONF_ICON): icon,
+        Optional(CONF_ENTITY_CATEGORY): entity_category,
     }
 )
 
-NAMEABLE_SCHEMA.add_extra(_nameable_validator)
+ENTITY_BASE_SCHEMA.add_extra(_entity_base_validator)
 
 COMPONENT_SCHEMA = Schema({Optional(CONF_SETUP_PRIORITY): float_})
 
@@ -1613,3 +1657,92 @@ def source_refresh(value: str):
     if value.lower() == "never":
         return source_refresh("1000y")
     return positive_time_period_seconds(value)
+
+
+@dataclass(frozen=True, order=True)
+class Version:
+    major: int
+    minor: int
+    patch: int
+
+    def __str__(self):
+        return f"{self.major}.{self.minor}.{self.patch}"
+
+    @classmethod
+    def parse(cls, value: str) -> "Version":
+        match = re.match(r"(\d+).(\d+).(\d+)", value)
+        if match is None:
+            raise ValueError(f"Not a valid version number {value}")
+        major = int(match[1])
+        minor = int(match[2])
+        patch = int(match[3])
+        return Version(major=major, minor=minor, patch=patch)
+
+
+def version_number(value):
+    value = string_strict(value)
+    try:
+        return str(Version.parse(value))
+    except ValueError as e:
+        raise Invalid("Not a version number") from e
+
+
+def platformio_version_constraint(value):
+    # for documentation on valid version constraints:
+    # https://docs.platformio.org/en/latest/core/userguide/platforms/cmd_install.html#cmd-platform-install
+
+    value = string_strict(value)
+    constraints = []
+    for item in value.split(","):
+        # find and strip prefix operator
+        op = None
+        for test_op in ("^", "~", ">=", ">", "<=", "<", "!="):
+            if item.startswith(test_op):
+                op = test_op
+                item = item[len(test_op) :]
+                break
+
+        constraints.append((op, version_number(item)))
+    return constraints
+
+
+def require_framework_version(
+    *,
+    esp_idf=None,
+    esp32_arduino=None,
+    esp8266_arduino=None,
+):
+    def validator(value):
+        core_data = CORE.data[KEY_CORE]
+        framework = core_data[KEY_TARGET_FRAMEWORK]
+        if framework == "esp-idf":
+            if esp_idf is None:
+                raise Invalid("This feature is incompatible with esp-idf")
+            required = esp_idf
+        elif CORE.is_esp32 and framework == "arduino":
+            if esp32_arduino is None:
+                raise Invalid(
+                    "This feature is incompatible with ESP32 using arduino framework"
+                )
+            required = esp32_arduino
+        elif CORE.is_esp8266 and framework == "arduino":
+            if esp8266_arduino is None:
+                raise Invalid("This feature is incompatible with ESP8266")
+            required = esp8266_arduino
+        else:
+            raise NotImplementedError
+        if core_data[KEY_FRAMEWORK_VERSION] < required:
+            raise Invalid(
+                f"This feature requires at least framework version {required}"
+            )
+        return value
+
+    return validator
+
+
+@contextmanager
+def suppress_invalid():
+    try:
+        yield
+    except vol.Invalid:
+        pass
